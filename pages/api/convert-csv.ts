@@ -11,7 +11,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
 
   upload.single("file")(req as any, res as any, async (err) => {
-    if (err || !(req as any).file) return res.status(400).send("No file");
+    if (err || !(req as any).file) return res.status(400).send("No file uploaded");
 
     const results: any[] = [];
 
@@ -20,7 +20,6 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       .on("data", (row) => results.push(row))
       .on("end", async () => {
         const rows = results
-          // Remove empty rows and junk header rows
           .filter((r) => r.Customer && r.Vehicle && r.Mileage && r["Appointment Date"] && /^\d{4}/.test(r.Vehicle))
           .map((r) => {
             const firstName = (r.Customer || "").split(" ")[0].split(",")[0].trim();
@@ -28,19 +27,19 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
             const model = (r.Vehicle || "").replace(/^\d{4}\s+/, "").split(" ")[0];
 
             const phoneText = r["Phone Numbers"] || "";
-            const cellMatch = phoneText.match(/C:[^\d]*(\d{3}[^\d]*\d{3}[^\d]*\d{4})/);
+            const cellMatch = phoneText.match(/C:[^\d]*(\d{3}[^\d]*\d{3}[^\d]*\d{4})/i);
             const cellDigits = cellMatch ? cellMatch[1].replace(/\D/g, "") : "";
             const phone11 = cellDigits.length >= 10 ? "1" + cellDigits.slice(-10) : "";
 
-            // Super-robust time parsing
+            // FIXED TIME PARSING for full date string like "11/26/2025 7:00:00 AM"
             let iso = "2025-12-01T12:00:00";
             const timeStr = r["Appointment Date"] || "";
-            const match = timeStr.match(/(\d{1,2}):(\d{2}):(\d{2}) (AM|PM)/);
-            if (match) {
-              let [_, h, m, s, period] = match;
+            const timeMatch = timeStr.match(/(\d{1,2}):(\d{2}):(\d{2}) (AM|PM)/i);
+            if (timeMatch) {
+              let [_, h, m, s, period] = timeMatch;
               let hour = parseInt(h);
-              if (period === "PM" && hour !== 12) hour += 12;
-              if (period === "AM" && hour === 12) hour = 0;
+              if (period.toUpperCase() === "PM" && hour !== 12) hour += 12;
+              if (period.toUpperCase() === "AM" && hour === 12) hour = 0;
               iso = `2025-12-01T${hour.toString().padStart(2, "0")}:${m}:${s}`;
             }
 
