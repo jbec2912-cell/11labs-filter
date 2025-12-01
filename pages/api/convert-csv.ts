@@ -17,21 +17,23 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
 
     Readable.from((req as any).file!.buffer)
       .pipe(csv())
-      .on("data", (row) => results.push(row))
+      .on("data", (row) => {
+        // Skip junk rows (title, generated, report period)
+        if (row.Customer && row.Vehicle && row.Mileage && row["Appointment Date"]) results.push(row);
+      })
       .on("end", async () => {
         const rows = results
-          .filter((r) => r.Customer && r.Vehicle && r.Mileage && r["Appointment Date"] && /^\d{4}/.test(r.Vehicle))
           .map((r) => {
             const firstName = (r.Customer || "").split(" ")[0].split(",")[0].trim();
             const year2 = (r.Vehicle || "").substring(0, 4).slice(-2);
-            const model = (r.Vehicle || "").replace(/^\d{4}\s+/, "").split(" ")[0];
+            const model = (r.Vehicle || "").replace(/^\d{4}\s+/, "").split(" ")[0] || "Unknown";
 
             const phoneText = r["Phone Numbers"] || "";
             const cellMatch = phoneText.match(/C:[^\d]*(\d{3}[^\d]*\d{3}[^\d]*\d{4})/i);
             const cellDigits = cellMatch ? cellMatch[1].replace(/\D/g, "") : "";
             const phone11 = cellDigits.length >= 10 ? "1" + cellDigits.slice(-10) : "";
 
-            // FIXED TIME PARSING for full date string like "11/26/2025 7:00:00 AM"
+            // Fixed parsing for full "12/1/2025 7:00:00 AM" — clean ISO without extra digits
             let iso = "2025-12-01T12:00:00";
             const timeStr = r["Appointment Date"] || "";
             const timeMatch = timeStr.match(/(\d{1,2}):(\d{2}):(\d{2}) (AM|PM)/i);
@@ -46,7 +48,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
             return {
               customer: firstName || "Unknown",
               year: year2,
-              model: model || "Unknown",
+              model: model,
               miles: (r.Mileage || "").replace(/,/g, ""),
               appointment: iso,
               phone_number: phone11 || "",
@@ -55,7 +57,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
           .sort((a, b) => a.appointment.localeCompare(b.appointment));
 
         const workbook = new ExcelJS.Workbook();
-        const sheet = workbook.addWorksheet("ElevenLabs");
+        const sheet = workbook.addWorksheet("TEXTEDLY TEMPLATE");
         sheet.columns = [
           { header: "customer", key: "customer" },
           { header: "year", key: "year" },
