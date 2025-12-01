@@ -11,12 +11,11 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
 
   upload.single("file")(req as any, res as any, async (err) => {
-    if (err || !req.file) return res.status(400).send("No file uploaded");
-
+if (err || !(req as any).file) return res.status(400).send("No file uploaded");
     const results: any[] = [];
 
-    Readable.from(req.file!.buffer)
-      .pipe(csv())
+Readable.from((req as any).file!.buffer)
+  .pipe(csv())
       .on("data", (row) => results.push(row))
       .on("end", async () => {
         const rows = results
