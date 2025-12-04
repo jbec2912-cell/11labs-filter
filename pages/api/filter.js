@@ -1,4 +1,4 @@
-// pages/api/filter.js  ←  FINAL VERSION – EXACTLY WHAT ELEVENLABS WANTS
+// pages/api/filter.js  ←  FINAL – 6 columns exactly as you want
 import multer from 'multer';
 import { parse } from 'csv-parse';
 import { stringify } from 'csv-stringify/sync';
@@ -8,16 +8,16 @@ const upload = multer();
 export const config = { api: { bodyParser: false } };
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
+  if (req.method !== 'POST') return res.status(405).end();
 
   upload.single('file')(req, {}, async (err) => {
-    if (err || !req.file) return res.status(400).send('No file uploaded');
+    if (err || !req.file) return res.status(400).send('No file');
 
     const buffer = req.file.buffer.toString('utf8');
 
     const records = [];
     require('stream').Readable.from(buffer)
-      .pipe(parse({ from_line: 6 }))
+      .pipe(parse({ from_line: 6 }))           // skip junk rows
       .on('data', row => records.push(row))
       .on('end', () => process(records));
   });
@@ -25,73 +25,47 @@ export default async function handler(req, res) {
   function process(rows) {
     const result = rows
       .map(r => ({
-        name:         r[0]  || '',
-        vehicle:      r[1]  || '',
-        mileage:      r[3]  || '',
-        appt:         r[4]  || '',
-        purchaseDate: r[7]  || '',
-        phones:       r[11] || '',
+        name:    r[0]  || '',
+        vehicle: r[1]  || '',
+        mileage: r[3]  || '',
+        appt:    r[4]  || '',
+        phones:  r[11] || '',
       }))
-      .filter(r => r.vehicle && !/202[56]/.test(r.vehicle))
-      .filter(r => {
-        if (!r.purchaseDate) return true;
-        const bought = new Date(r.purchaseDate);
-        if (isNaN(bought)) return true;
-        const months = (new Date().getFullYear() - bought.getFullYear()) * 12 +
-                       (new Date().getMonth() - bought.getMonth());
-        return months >= 12;
-      })
+      .filter(r => r.vehicle && !/202[56]/.test(r.vehicle))           // no 2025/2026
       .map(r => {
-        // Name
-        const parts = r.name.trim().split(/\s+/);
-        const first = parts[0] ? parts[0][0].toUpperCase() + parts[0].slice(1).toLowerCase() : '';
-        let last = parts.slice(1).join(' ');
-        last = last.replace(/\bjr\b/gi, 'Jr').replace(/\bsr\b/gi, 'Sr');
-        last = last ? last[0].toUpperCase() + last.slice(1).toLowerCase() : '';
+        // First name only
+        const first = r.name.trim().split(/\s+/)[0] || '';
+        const customer = first ? first[0].toUpperCase() + first.slice(1).toLowerCase() : '';
 
-        // Year & Model
+        // Year (2-digit)
         const year2 = r.vehicle.match(/20(\d{2})/)?.[1] || '';
+
+        // Model (remove year)
         const model = r.vehicle.replace(/20\d{2}\s+/, '').trim();
 
         // Miles
         const miles = parseInt(r.mileage.replace(/,/g, '')) || 0;
 
-        // Phone – MUST have valid phone or row is deleted
+        // Appointment
+        const appointment = r.appt.trim();
+
+        // Phone – delete row if none
         const digits = (r.phones.match(/\d{10,11}/g) || []).pop() || '';
         let phone = '';
         if (digits.length === 10) phone = '1' + digits;
         else if (digits.length === 11 && digits.startsWith('1')) phone = digits;
-        if (!phone) return null;  // ← deletes row if no phone
+        if (!phone) return null;
 
-        return {
-          phone_number: phone,
-          Tag: 'Future Service Appointment',
-          Customer: first,
-          Last_Name: last,
-          Year: year2,
-          Vehicle: model,
-          Miles: miles,
-          Appointment: r.appt.trim()
-        };
+        return { customer, year: year2, model, miles, appointment, phone_number: phone };
       })
       .filter(Boolean);
 
-    // Sort: newest year first → then by appointment time
-    result.sort((a, b) => b.Year.localeCompare(a.Year) || a.Appointment.localeCompare(b.Appointment));
+    // Sort newest → oldest year, then by appointment
+    result.sort((a, b) => b.year.localeCompare(a.year) || a.appointment.localeCompare(b.appointment));
 
-    // EXACT column order and headers ElevenLabs wants
     const csv = stringify(result, {
       header: true,
-      columns: [
-        'phone_number',
-        'Tag',
-        'Customer',
-        'Last_Name',
-        'Year',
-        'Vehicle',
-        'Miles',
-        'Appointment'
-      ]
+      columns: ['customer','year','model','miles','appointment','phone_number']
     });
 
     res.setHeader('Content-Type', 'text/csv');
