@@ -2,38 +2,30 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Toyota → 11Labs Filter</title>
-  <style>
-    body { font-family: Arial; text-align: center; padding: 50px; background: #f8f8f8; }
-    input, button { padding: 15px; font-size: 18px; margin: 10px; }
-    a { color: #0066ff; }
-  </style>
+  <title>Toyota 11Labs Filter</title>
+  <style>body{font-family:Arial;text-align:center;padding:80px;background:#f4f4f4}</style>
 </head>
 <body>
-  <h1>Lakeland Toyota → ElevenLabs CSV Filter</h1>
-  <p>Upload the raw export → get the cleaned list instantly</p>
-  <input type="file" id="file" accept=".csv">
-  <button onclick="upload()">Process & Download</button>
-  <p id="status"></p>
-
+  <h1>Lakeland Toyota → ElevenLabs Filter</h1>
+  <p>Upload raw CSV → download clean list</p>
+  <input type="file" id="f" accept=".csv"><br><br>
+  <button onclick="go()" style="padding:15px 30px;font-size:18px">Process & Download</button>
+  <p id="s"></p>
   <script>
-  async function upload() {
-    const file = document.getElementById('file').files[0];
-    if (!file) return alert("Choose a file first");
-    document.getElementById('status').textContent = "Processing...";
-    
+  async function go(){
+    const file = document.getElementById('f').files[0];
+    if(!file) return alert("Pick a file");
+    document.getElementById('s').innerHTML = "Working...";
     const form = new FormData();
     form.append('file', file);
-
-    const res = await fetch('/api/filter', { method: 'POST', body: form });
-    const blob = await res.blob();
-    
+    const r = await fetch('/api/filter', {method:'POST', body:form});
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
+    a.href = url;
     a.download = 'Filtered For 11Labs.csv';
     a.click();
-    
-    document.getElementById('status').textContent = "Done! File downloaded";
+    document.getElementById('s').innerHTML = "Downloaded!";
   }
   </script>
 </body>
