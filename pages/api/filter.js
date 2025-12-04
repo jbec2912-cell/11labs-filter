@@ -19,8 +19,7 @@ export default function handler(req, res) {
 
     require('stream')
       .Readable.from(req.file.buffer)
-      .pipe(parse({ from_line: 6 }))
-      .on('data', row => records.push(row))
+      .pipe(parse({ from_line: 8 }))   // skip 7 junk rows — safe for all exports      .on('data', row => records.push(row))
       .on('end', () => {
         const rows = records
           .map(r => ({
