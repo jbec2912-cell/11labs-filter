@@ -1,4 +1,4 @@
-// pages/api/filter.js
+// pages/api/filter.js  ←  FINAL VERSION (correct column order + names)
 import multer from 'multer';
 import { parse } from 'csv-parse';
 import { stringify } from 'csv-stringify/sync';
@@ -10,91 +10,86 @@ export const config = {
 };
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).send('Method not allowed');
-  }
+  if (req.method !== 'POST') return res.status(405).send('Method not allowed');
 
   upload.single('file')(req, {}, async (err) => {
-    if (err || !req.file) {
-      return res.status(400).send('No file uploaded');
-    }
+    if (err || !req.file) return res.status(400).send('No file uploaded');
 
     const buffer = req.file.buffer.toString('utf8');
 
     const records = [];
     require('stream').Readable.from(buffer)
-      .pipe(parse({ from_line: 6 })) // skip first 5 header/junk rows
+      .pipe(parse({ from_line: 6 }))
       .on('data', (row) => records.push(row))
-      .on('end', () => processRecords(records));
+      .on('end', () => process(records));
   });
 
-  function processRecords(rows) {
-    const filtered = rows
+  function process(rows) {
+    const result = rows
       .map((r) => ({
-        name: r[0] || '',
-        vehicle: r[1] || '',
-        mileage: r[3] || '',
-        appt: r[4] || '',
-        purchaseDate: r[7] || '',
-        phones: r[11] || '',
+        name:         r[0]  || '',
+        vehicle:      r[1]  || '',
+        mileage:      r[3]  || '',
+        appt:         r[4]  || '',
+        purchaseDate: r[7]  || '',
+        phones:       r[11] || '',
       }))
       .filter((r) => r.vehicle && r.vehicle.trim() !== '')
-      .filter((r) => !/202[56]/.test(r.vehicle)) // remove 2025 & 2026 models
+      .filter((r) => !/202[56]/.test(r.vehicle))
       .filter((r) => {
         if (!r.purchaseDate) return true;
         const bought = new Date(r.purchaseDate);
         if (isNaN(bought)) return true;
-        const months =
-          (new Date().getFullYear() - bought.getFullYear()) * 12 +
-          (new Date().getMonth() - bought.getMonth());
+        const months = (new Date().getFullYear() - bought.getFullYear()) * 12 +
+                       (new Date().getMonth() - bought.getMonth());
         return months >= 12;
-      });
-
-    const finalRows = filtered
+      })
       .map((r) => {
-        // Name handling
-        const parts = r.name.trim().split(/\s+/);
-        const first = parts[0]
-          ? parts[0][0].toUpperCase() + parts[0].slice(1).toLowerCase()
-          : '';
-        let last = parts.slice(1).join(' ');
-        last = last.replace(/\bjr\b/gi, 'Jr').replace(/\bsr\b/gi, 'Sr');
-        last = last ? last[0].toUpperCase() + last.slice(1).toLowerCase() : '';
+        // First name only
+        const firstName = r.name.trim().split(/\s+/)[0] || '';
+        const customer = firstName ? firstName[0].toUpperCase() + firstName.slice(1).toLowerCase() : '';
 
-        // Year & Model
-        const yearMatch = r.vehicle.match(/20(\d{2})/);
-        const year2 = yearMatch ? yearMatch[1] : '';
+        // 2-digit year
+        const year2 = r.vehicle.match(/20(\d{2})/)?.[1] || '';
+
+        // Model (remove year)
         const model = r.vehicle.replace(/20\d{2}\s+/, '').trim();
 
-        // Mileage
+        // Miles
         const miles = parseInt(r.mileage.replace(/,/g, '')) || 0;
 
-        // PHONE: extract last 10 or 11 digits, force 1xxxxxxxxxx
-        const phoneDigits = (r.phones.match(/\d{10,11}/g) || []).pop() || '';
-        let cleanPhone = '';
-        if (phoneDigits.length === 10) cleanPhone = '1' + phoneDigits;
-        else if (phoneDigits.length === 11 && phoneDigits.startsWith('1')) cleanPhone = phoneDigits;
-
-        // DELETE ROW IF NO PHONE
-        if (!cleanPhone) return null;
+        // Phone — delete row if none
+        const digits = (r.phones.match(/\d{10,11}/g) || []).pop() || '';
+        let phone = '';
+        if (digits.length === 10) phone = '1' + digits;
+        else if (digits.length === 11 && digits.startsWith('1')) phone = digits;
+        if (!phone) return null;
 
         return {
-          Tag: 'Future Service Appointment',
-          Customer: first,
-          Last_Name: last || '',
-          Year: year2,
-          Vehicle: model,
-          Miles: miles,
-          Appointment: r.appt,
-          Phone_Number: cleanPhone,
+          customer:   customer,
+          year:       year2,
+          model:      model,
+          miles:      miles,
+          appointment: r.appt.trim(),
+          phone_number: phone
         };
       })
-      .filter(Boolean); // removes null rows (no phone)
+      .filter(Boolean);
 
-    // Sort: newest year first, then by appointment time
-    finalRows.sort((a, b) => b.Year.localeCompare(a.Year) || a.Appointment.localeCompare(b.Appointment));
+    // Sort newest year → oldest, then by appointment time
+    result.sort((a, b) => b.year.localeCompare(a.year) || a.appointment.localeCompare(b.appointment);
 
-    const csv = stringify(finalRows, { header: true });
+    const csv = stringify(result, {
+      header: true,
+      columns: [
+        { key: 'customer',    header: 'customer' },
+        { key: 'year',       header: 'year' },
+        { key: 'model',      header: 'model' },
+        { key: 'miles',      header: 'miles' },
+        { key: 'appointment', header: 'appointment' },
+        { key: 'phone_number',header: 'phone_number' }
+      ]
+    });
 
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', 'attachment; filename="Filtered For 11Labs.csv"');
