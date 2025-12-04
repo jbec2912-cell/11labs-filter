@@ -1,67 +1,60 @@
-// pages/api/filter.js
+// pages/api/filter.js   ← MUST be JavaScript, not Python!
 import multer from 'multer';
 import { parse } from 'csv-parse';
-import { stringify from 'csv-stringify/sync';
+import { stringify } from 'csv-stringify/sync';
 
 const upload = multer();
 
 export const config = {
-  api: {
-    bodyParser: false,
-  },
+  api: { bodyParser: false }
 };
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    res.status(405).end();
-    return;
-  }
+  if (req.method !== 'POST') return res.status(405).end();
 
   upload.single('file')(req, {}, async (err) => {
-    if (err) {
-      res.status(500).end('Upload error');
-      return;
-    }
+    if (err) return res.status(500).send('Upload error');
 
-    const buffer = req.file.buffer.toString('utf8');
+    const buffer = req.file.buffer.toString();
 
     const records = [];
     require('stream').Readable.from(buffer)
-      .pipe(parse({ from_line: 6 })) // skips the first 5 junk rows
-      .on('data', (row) => records.push(row))
-      .on('end', () => processCSV(records));
-    
-    const processCSV = (rows) => {
-      let filtered = rows
+      .pipe(parse({ from_line: 6 }))           // skips the 5 junk header rows
+      .on('data', row => records.push(row))
+      .on('end', () => process(records));
+
+    function process(rows) {
+      let data = rows
         .map(r => ({
-          Customer:     r[0]  || '',
-          Vehicle:      r[1]  || '',
-          Mileage:      r[3]  || '',
-          Appointment:  r[4]  || '',
-          PurchaseDate: r[7]  || '',
-          Phones:       r[11] || '',
+          name:         r[0]  || '',
+          vehicle:      r[1]  || '',
+          mileage:      r[3]  || '',
+          appt:         r[4]  || '',
+          purchaseDate: r[7]  || '',
+          phones:       r[11] || '',
         }))
-        .filter(r => r.Vehicle && !/202[56]/.test(r.Vehicle))
+        .filter(r => r.vehicle && !/202[56]/.test(r.vehicle)) // remove 2025/2026 models
         .filter(r => {
-          if (!r.PurchaseDate) return true;
-          const bought = new Date(r.PurchaseDate);
-          const months = (new Date().getMonth() - bought.getMonth() + 12*(new Date().getFullYear() - bought.getFullYear());
+          if (!r.purchaseDate) return true;
+          const bought = new Date(r.purchaseDate);
+          const months = (new Date().getFullYear() - bought.getFullYear()) * 12 +
+                         (new Date().getMonth() - bought.getMonth());
           return months >= 12 || isNaN(months);
         });
 
-      const finalRows = filtered.map(r => {
-        const nameParts = r.Customer.trim().split(/\s+/g);
-        const first = nameParts[0] ? nameParts[0].charAt(0).toUpperCase() + nameParts[0].slice(1).toLowerCase() : '';
-        let last = nameParts.slice(1).join(' ');
+      const final = data.map(r => {
+        const parts = r.name.trim().split(/\s+/);
+        const first = parts[0] ? parts[0][0].toUpperCase() + parts[0].slice(1).toLowerCase() : '';
+        let last = parts.slice(1).join(' ');
         last = last.replace(/\bjr\b/gi, 'Jr').replace(/\bsr\b/gi, 'Sr');
-        last = last ? last.charAt(0).toUpperCase() + last.slice(1).toLowerCase() : '';
+        last = last ? last[0].toUpperCase() + last.slice(1).toLowerCase() : '';
 
-        const year2 = r.Vehicle.match(/20(\d{2})/)?.[1] || '';
-        const model = r.Vehicle.replace(/20\d{2}\s*/, '').trim();
-        const miles = parseInt(r.Mileage) || 0;
+        const year2 = r.vehicle.match(/20(\d{2})/)?.[1] || '';
+        const model = r.vehicle.replace(/20\d{2}\s+/, '').trim();
+        const miles = parseInt(r.mileage) || 0;
 
-        const phoneDigits = (r.Phones.match(/\d{10,11}/g) || []).pop() || '';
-        const phone = phoneDigits.length === 10 ? '1' + phoneDigits : phoneDigits;
+        const phone = ((r.phones.match(/\d{10,11}/g) || []).pop() || '');
+        const cleanPhone = phone.length === 10 ? '1' + phone : phone;
 
         return {
           Tag: "Future Service Appointment",
@@ -70,19 +63,18 @@ export default async function handler(req, res) {
           Year: year2,
           Vehicle: model,
           Miles: miles,
-          Appointment: r.Appointment,
-          Phone_Number: phone
+          Appointment: r.appt,
+          Phone_Number: cleanPhone
         };
       });
 
-      // Sort exactly like your example
-      finalRows.sort((a, b) => b.Year - a.Year || a.Appointment.localeCompare(b.Appointment));
+      final.sort((a, b) => b.Year - a.Year || a.Appointment.localeCompare(b.Appointment));
 
-      const csvContent = stringify(finalRows, { header: true });
+      const csv = stringify(final, { header: true });
 
       res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename=Filtered For 11Labs.csv');
-      res.status(200).send(csvContent);
-    };
+      res.setHeader('Content-Disposition', 'attachment; filename="Filtered For 11Labs.csv"');
+      res.send(csv);
+    }
   });
 }
